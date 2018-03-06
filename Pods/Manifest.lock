@@ -1,0 +1,16 @@
+PODS:
+  - MZDownloadManager (3.3)
+
+DEPENDENCIES:
+  - MZDownloadManager (from `Test00008/..`)
+
+EXTERNAL SOURCES:
+  MZDownloadManager:
+    :path: Test00008/..
+
+SPEC CHECKSUMS:
+  MZDownloadManager: fcd942f562917c693e213bcc46ae92604416d4c7
+
+PODFILE CHECKSUM: 873a7eff40dcd3f6630f3b3bd7cbdd03f6487309
+
+COCOAPODS: 1.3.1
