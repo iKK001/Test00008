@@ -8,7 +8,6 @@
 
 import Foundation
 import UIKit
-import MZDownloadManager
 
 class DBFilesPresenterViewController: UIViewController, UITableViewDataSource, UITableViewDelegate {
     

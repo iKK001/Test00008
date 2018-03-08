@@ -6,25 +6,28 @@
 //  Copyright © 2016 ideamakerz. All rights reserved.
 //
 
+import Foundation
 import UIKit
+import UserNotifications
+
 fileprivate func < <T : Comparable>(lhs: T?, rhs: T?) -> Bool {
-  switch (lhs, rhs) {
-  case let (l?, r?):
-    return l < r
-  case (nil, _?):
-    return true
-  default:
-    return false
-  }
+    switch (lhs, rhs) {
+    case let (l?, r?):
+        return l < r
+    case (nil, _?):
+        return true
+    default:
+        return false
+    }
 }
 
 fileprivate func > <T : Comparable>(lhs: T?, rhs: T?) -> Bool {
-  switch (lhs, rhs) {
-  case let (l?, r?):
-    return l > r
-  default:
-    return rhs < lhs
-  }
+    switch (lhs, rhs) {
+    case let (l?, r?):
+        return l > r
+    default:
+        return rhs < lhs
+    }
 }
 
 @objc public protocol MZDownloadManagerDelegate: class {
@@ -58,23 +61,28 @@ fileprivate func > <T : Comparable>(lhs: T?, rhs: T?) -> Bool {
     /**A delegate method called each time whenever specified destination does not exists. It will be called on the session queue. It provides the opportunity to handle error appropriately
      */
     @objc optional func downloadRequestDestinationDoestNotExists(_ downloadModel: MZDownloadModel, index: Int, location: URL)
-    
 }
 
 @objcMembers
 open class MZDownloadManager: NSObject {
     
-    static var shared = MZDownloadManager()
-    weak var downloadDelegate: MZDownloadManagerDelegate?
+    open static var shared = MZDownloadManager()
+    open weak var downloadDelegate: MZDownloadManagerDelegate?
+    open var downloadingArray: [MZDownloadModel] = []
     
     fileprivate var sessionManager: URLSession!
     fileprivate var backgroundSessionCompletionHandler: (() -> Void)?
     fileprivate let TaskDescFileNameIndex = 0
     fileprivate let TaskDescFileURLIndex = 1
     fileprivate let TaskDescFileDestinationIndex = 2
-    fileprivate var downloadingArray: [MZDownloadModel] = []
     
     open func activate(session sessionIdentifer: String, completion: (() -> Void)?) {
+        
+        let center = UNUserNotificationCenter.current()
+        UIApplication.shared.applicationIconBadgeNumber = 0
+        center.requestAuthorization(options: [.alert, .sound]) { (granted, error) in
+            // Enable or disable features based on authorization.
+        }
         
         self.backgroundSessionCompletionHandler = completion
         self.sessionManager = backgroundSession(identifier: sessionIdentifer)
@@ -99,7 +107,7 @@ extension MZDownloadManager {
     fileprivate func downloadTasks() -> [URLSessionDownloadTask] {
         var tasks: [URLSessionDownloadTask] = []
         let semaphore : DispatchSemaphore = DispatchSemaphore(value: 0)
-        self.sessionManager.getTasksWithCompletionHandler { (dataTasks, uploadTasks, downloadTasks) -> Void in
+        sessionManager.getTasksWithCompletionHandler { (dataTasks, uploadTasks, downloadTasks) -> Void in
             tasks = downloadTasks
             semaphore.signal()
         }
@@ -127,10 +135,10 @@ extension MZDownloadManager {
             
             if downloadTask.state == .running {
                 downloadModel.status = TaskStatus.downloading.description()
-                self.downloadingArray.append(downloadModel)
+                downloadingArray.append(downloadModel)
             } else if(downloadTask.state == .suspended) {
                 downloadModel.status = TaskStatus.paused.description()
-                self.downloadingArray.append(downloadModel)
+                downloadingArray.append(downloadModel)
             } else {
                 downloadModel.status = TaskStatus.failed.description()
             }
@@ -148,7 +156,7 @@ extension MZDownloadManager {
             resumeDictionary = try PropertyListSerialization.propertyList(from: resumeData!, options: PropertyListSerialization.MutabilityOptions(), format: nil) as AnyObject!
             var localFilePath = (resumeDictionary?["NSURLSessionResumeInfoLocalPath"] as? String)
             
-            if localFilePath == nil || localFilePath?.characters.count < 1 {
+            if localFilePath == nil || localFilePath?.count < 1 {
                 localFilePath = (NSTemporaryDirectory() as String) + (resumeDictionary["NSURLSessionResumeInfoTempFileName"] as! String)
             }
             
@@ -224,6 +232,7 @@ extension MZDownloadManager: URLSessionDelegate {
                 if fileManager.fileExists(atPath: basePath) {
                     let fileURL = URL(fileURLWithPath: destinationPath as String)
                     debugPrint("directory path = \(destinationPath)")
+                    self.presentNotificationForDownload("Download complete!", notifBody: "The download of your File was successful")
                     
                     do {
                         try fileManager.moveItem(at: location, to: fileURL)
@@ -241,6 +250,8 @@ extension MZDownloadManager: URLSessionDelegate {
                     
                     if let _ = self.downloadDelegate?.downloadRequestDestinationDoestNotExists {
                         self.downloadDelegate?.downloadRequestDestinationDoestNotExists?(downloadModel, index: index, location: location)
+                        
+                        self.presentNotificationForDownload("Download complete!", notifBody: "The download of your File was successful")
                     } else {
                         let error = NSError(domain: "FolderDoesNotExist", code: 404, userInfo: [NSLocalizedDescriptionKey : "Destination folder does not exists"])
                         self.downloadDelegate?.downloadRequestDidFailedWithError?(error, downloadModel: downloadModel, index: index)
@@ -349,7 +360,7 @@ extension MZDownloadManager {
         let url = URL(string: fileURL as String)!
         let request = URLRequest(url: url)
         
-        let downloadTask = self.sessionManager.downloadTask(with: request)
+        let downloadTask = sessionManager.downloadTask(with: request)
         downloadTask.taskDescription = [fileName, fileURL, destinationPath].joined(separator: ",")
         downloadTask.resume()
         
@@ -361,7 +372,7 @@ extension MZDownloadManager {
         downloadModel.task = downloadTask
         
         self.downloadingArray.append(downloadModel)
-        self.downloadDelegate?.downloadRequestStarted?(downloadModel, index: downloadingArray.count - 1)
+        self.downloadDelegate?.downloadRequestStarted?(downloadModel, index: self.downloadingArray.count - 1)
     }
     
     public func addDownloadTask(_ fileName: String, fileURL: String) {
@@ -370,7 +381,7 @@ extension MZDownloadManager {
     
     public func pauseDownloadTaskAtIndex(_ index: Int) {
         
-        let downloadModel = downloadingArray[index]
+        let downloadModel = self.downloadingArray[index]
         
         guard downloadModel.status != TaskStatus.paused.description() else {
             return
@@ -428,16 +439,23 @@ extension MZDownloadManager {
     }
     
     public func presentNotificationForDownload(_ notifAction: String, notifBody: String) {
-        let application = UIApplication.shared
-        let applicationState = application.applicationState
         
-        if applicationState == UIApplicationState.background {
-            let localNotification = UILocalNotification()
-            localNotification.alertBody = notifBody
-            localNotification.alertAction = notifAction
-            localNotification.soundName = UILocalNotificationDefaultSoundName
-            localNotification.applicationIconBadgeNumber += 1
-            application.presentLocalNotificationNow(localNotification)
+        DispatchQueue.main.async {
+            let content = UNMutableNotificationContent()
+            content.title = NSString.localizedUserNotificationString(forKey: notifAction, arguments: nil)
+            content.body = NSString.localizedUserNotificationString(forKey: notifBody, arguments: nil)
+            content.sound = UNNotificationSound.default()
+            content.badge = (UIApplication.shared.applicationIconBadgeNumber + 1) as NSNumber
+            content.categoryIdentifier = "ch.ideenkaffee.Chunder.NotificationDownload"
+            // Deliver the notification in five seconds.
+            let trigger = UNTimeIntervalNotificationTrigger.init(timeInterval: 60.0, repeats: true)
+            let request = UNNotificationRequest.init(identifier: "FiveSecond", content: content, trigger: trigger)
+            
+            // Schedule the notification.
+            let center = UNUserNotificationCenter.current()
+            center.add(request)
         }
     }
 }
+
+

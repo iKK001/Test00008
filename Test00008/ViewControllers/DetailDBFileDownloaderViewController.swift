@@ -8,7 +8,6 @@
 
 import Foundation
 import UIKit
-import MZDownloadManager
 
 class DetailDBFileDownloaderViewController: UIViewController {
     
@@ -29,27 +28,56 @@ class DetailDBFileDownloaderViewController: UIViewController {
     
     var FileIndex: Int?
     
-    @objc lazy var downloadManager: MZDownloadManager = {
-        [unowned self] in
-        let sessionIdentifer: String = "ch.Test00008.BackgroundSession"
-        
-        let appDelegate = UIApplication.shared.delegate as! AppDelegate
-        var completion = appDelegate.backgroundSessionCompletionHandler
-        
-        let downloadmanager = MZDownloadManager(session: sessionIdentifer, delegate: self, completion: completion)
-        return downloadmanager
-        }()
+    let sessionIdentifer: String = "com.myId.BackgroundSession"
+    let appDelegate = UIApplication.shared.delegate as! AppDelegate
+    lazy var completion = appDelegate.backgroundSessionCompletionHandler
     
     override func viewDidLoad() {
         super.viewDidLoad()
         
         // Do any additional setup after loading the view.
         
-        if self.downloadManager.downloadingArray.count == 0 {
-            self.downloadManager.addDownloadTask(self.titleLabelString!, fileURL: self.fileURL!, destinationPath: self.downloadPath!)
+        // create a running background-download Session
+        // Warning: If an URLSession still exists from a previous download, it doesn't create a new URLSession object but returns the existing one with the old delegate object attached!
+        MZDownloadManager.shared.activate(session: sessionIdentifer, completion: completion)
+        
+        MZDownloadManager.shared.downloadDelegate = self
+        
+        print("found tasks = \(MZDownloadManager.shared.downloadingArray.count)")
+        var highestIdenty = 0
+        var foundOne: Bool = false
+        for downy in MZDownloadManager.shared.downloadingArray { // for all tasks..
+            if downy.fileURL == self.fileURL { // the ones relevant...
+                if (downy.task?.taskIdentifier)! > highestIdenty {
+                    highestIdenty = (downy.task?.taskIdentifier)!
+                    foundOne = true
+                }
+            }
         }
-        let status = self.downloadManager.downloadingArray[self.FileIndex!].status
-        self.showAppropriateStatus(status)
+        if foundOne { // delete all relevant ones except one with highest taskID
+            var i = 0
+            let tempy = MZDownloadManager.shared.downloadingArray
+            for bony in tempy {
+                if bony.fileURL == self.fileURL {
+                    if (bony.task?.taskIdentifier)! < highestIdenty {
+                        MZDownloadManager.shared.cancelTaskAtIndex(i)
+                    }
+                    i = i - 1
+                }
+                i = i + 1
+            }
+            print("highest ID = \(highestIdenty)")
+        } else { // if no relevant arround at all, then add one
+            MZDownloadManager.shared.addDownloadTask(self.titleLabelString!, fileURL: self.fileURL!, destinationPath: self.downloadPath!)
+        }
+        // now we are supposed to have at least one relevant one !
+        for rowny in MZDownloadManager.shared.downloadingArray {
+            if rowny.fileURL == self.fileURL {
+                
+                let status = rowny.status
+                self.showAppropriateStatus(status)
+            }
+        }
         
         DispatchQueue.main.async {
             self.progressBarOutlet.transform =
@@ -125,27 +153,27 @@ class DetailDBFileDownloaderViewController: UIViewController {
     }
     
     @IBAction func startDownloadButtonPressed(_ sender: Any) {
-        if self.downloadManager.downloadingArray.count == 0 {
-            self.downloadManager.addDownloadTask(self.titleLabelString!, fileURL: self.fileURL!, destinationPath: self.downloadPath!)
+        if MZDownloadManager.shared.downloadingArray.count == 0 {
+            MZDownloadManager.shared.addDownloadTask(self.titleLabelString!, fileURL: self.fileURL!, destinationPath: self.downloadPath!)
         }
-        self.downloadManager.resumeDownloadTaskAtIndex(self.FileIndex!)
+        MZDownloadManager.shared.resumeDownloadTaskAtIndex(self.FileIndex!)
     }
     
     @IBAction func pauseButtonPressed(_ sender: Any) {
         
         if self.pauseButton.titleLabel?.text == "Pause" {
-            self.downloadManager.pauseDownloadTaskAtIndex(self.FileIndex!)
+            MZDownloadManager.shared.pauseDownloadTaskAtIndex(self.FileIndex!)
         } else if self.pauseButton.titleLabel?.text == "Resume" {
-            self.downloadManager.resumeDownloadTaskAtIndex(self.FileIndex!)
+            MZDownloadManager.shared.resumeDownloadTaskAtIndex(self.FileIndex!)
         }
     }
     
     @IBAction func cancelButtonPresed(_ sender: Any) {
-        self.downloadManager.cancelTaskAtIndex(self.FileIndex!)
+        MZDownloadManager.shared.cancelTaskAtIndex(self.FileIndex!)
     }
     
     func retryAction() {
-        self.downloadManager.retryDownloadTaskAtIndex(self.FileIndex!)
+        MZDownloadManager.shared.retryDownloadTaskAtIndex(self.FileIndex!)
     }
 }
 
