@@ -86,6 +86,7 @@ open class MZDownloadManager: NSObject {
         
         self.backgroundSessionCompletionHandler = completion
         self.sessionManager = backgroundSession(identifier: sessionIdentifer)
+        self.populateOtherDownloadTasks()
     }
     
     fileprivate func backgroundSession(identifier: String) -> URLSession {
